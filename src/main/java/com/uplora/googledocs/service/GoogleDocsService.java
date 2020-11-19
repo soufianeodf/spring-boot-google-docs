@@ -38,7 +38,7 @@ public class GoogleDocsService {
     private static final String APPLICATION_NAME = "Google Docs API Java Quickstart";
     private static final JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
     private static final String TOKENS_DIRECTORY_PATH = "tokens";
-    private static final String DOCUMENT_ID = "1ZZWExvIj9t0eHzCr-z3uAXUEHwFt9DnefId2DabecDU";
+    private static final String DOCUMENT_ID = "1Jp1q4XdcsYtifFXI3Xz6kJqpo4mw6SWaa58P9t5UuRM";
 
     /**
      * Global instance of the scopes required by this quickstart.
@@ -163,8 +163,8 @@ public class GoogleDocsService {
                 .batchUpdate(DOCUMENT_ID, body).execute();*/
 
         MergeRequest valuesFromEndpoint = getValuesFromEndpoint(extractVariablesFromText(extractTextFromDocument()));
-        mergeText(valuesFromEndpoint.getValues());
         transformTheTable(valuesFromEndpoint.getTable());
+        mergeText(valuesFromEndpoint.getValues());
     }
 
     public void transformTheTable(List<HashMap<String, String>> table) throws IOException {
@@ -175,8 +175,8 @@ public class GoogleDocsService {
 
         Document response = service.documents().get(DOCUMENT_ID).execute();
         // print the response as json
-        Gson gson = new GsonBuilder().setPrettyPrinting().create();
-        System.out.println(gson.toJson(response));
+//        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+//        System.out.println(gson.toJson(response));
 
         List<StructuralElement> elements = response.getBody().getContent();
 
@@ -210,7 +210,7 @@ public class GoogleDocsService {
 
         indexOfFirstCell += endIndexOfDynamicTableWord + 3 + (tableColumnsNumber-1)*2 + 3;
 
-        System.out.println(endIndexOfDynamicTableWord);
+//        System.out.println(endIndexOfDynamicTableWord);
 
         List<Request> requests = new ArrayList<>();
 
@@ -255,42 +255,6 @@ public class GoogleDocsService {
             }
         }
 
-//        String value_1 = "first cell value";
-//        String value_2 = "second cell value";
-//        String value_3 = "third cell value";
-//        String value_4 = "fourth cell value";
-//
-//        String value_5 = "fifth cell value";
-//        String value_6 = "sixth cell value";
-//        String value_7 = "seventh cell value";
-//        String value_8 = "eighth cell value";
-//
-//        requests.add(new Request().setInsertText(new InsertTextRequest()
-//                .setText(value_1)
-//                .setLocation(new Location().setIndex(indexOfFirstCell))));
-//        requests.add(new Request().setInsertText(new InsertTextRequest()
-//                .setText(value_2)
-//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2))));
-//        requests.add(new Request().setInsertText(new InsertTextRequest()
-//                .setText(value_3)
-//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2 + value_2.length() + 2))));
-//        requests.add(new Request().setInsertText(new InsertTextRequest()
-//                .setText(value_4)
-//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2 + value_2.length() + 2 + value_3.length() + 2))));
-//
-//        requests.add(new Request().setInsertText(new InsertTextRequest()
-//                .setText(value_5)
-//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2 + value_2.length() + 2 + value_3.length() + 2 + value_4.length() + 3))));
-//        requests.add(new Request().setInsertText(new InsertTextRequest()
-//                .setText(value_6)
-//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2 + value_2.length() + 2 + value_3.length() + 2 + value_4.length() + 3 + value_5.length() + 2))));
-//        requests.add(new Request().setInsertText(new InsertTextRequest()
-//                .setText(value_7)
-//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2 + value_2.length() + 2 + value_3.length() + 2 + value_4.length() + 3 + value_5.length() + 2 + value_6.length() + 2))));
-//        requests.add(new Request().setInsertText(new InsertTextRequest()
-//                .setText(value_8)
-//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2 + value_2.length() + 2 + value_3.length() + 2 + value_4.length() + 3 + value_5.length() + 2 + value_6.length() + 2 + value_7.length() + 2))));
-
         // remove ${dynamic_table} annotation
         requests.add(new Request()
                 .setReplaceAllText(new ReplaceAllTextRequest()
@@ -315,17 +279,6 @@ public class GoogleDocsService {
                             .setReplaceText(value.getValue())));
         });
 
-//        mergeRequest.getTable().forEach(row -> {
-//            row.keySet().forEach(cell -> {
-//                requests.add(new Request()
-//                        .setReplaceAllText(new ReplaceAllTextRequest()
-//                                .setContainsText(new SubstringMatchCriteria()
-//                                        .setText("${" + cell + "}")
-//                                        .setMatchCase(true))
-//                                .setReplaceText(row.get(cell))));
-//            });
-//        });
-
         BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
         service.documents().batchUpdate(DOCUMENT_ID, body.setRequests(requests)).execute();
     }
@@ -341,21 +294,35 @@ public class GoogleDocsService {
         values.add(new Value("customer_street", "customer street"));
         values.add(new Value("customer_city", "customer city"));
 
+        // key should be unique
         HashMap<String, String> row_1 = new LinkedHashMap<>();
         row_1.put("col_11", "val_11");
         row_1.put("col_12", "val_12");
-        row_1.put("col_13", "val_13");
-        row_1.put("col_14", "val_14");
+        row_1.put("col_13", "val_12");
+        row_1.put("col_14", "val_12");
+        row_1.put("col_15", "val_12");
+        row_1.put("col_16", "val_12");
 
         HashMap<String, String> row_2 = new LinkedHashMap<>();
         row_2.put("col_21", "val_21");
         row_2.put("col_22", "val_22");
-        row_2.put("col_23", "val_23");
-        row_2.put("col_24", "val_24");
+        row_2.put("col_23", "val_22");
+        row_2.put("col_24", "val_22");
+        row_2.put("col_25", "val_22");
+        row_2.put("col_26", "val_22");
+
+        HashMap<String, String> row_3 = new LinkedHashMap<>();
+        row_3.put("col_31", "val_31");
+        row_3.put("col_32", "val_32");
+        row_3.put("col_33", "val_32");
+        row_3.put("col_34", "val_32");
+        row_3.put("col_35", "val_32");
+        row_3.put("col_36", "val_32");
 
         List<HashMap<String, String>> table = new ArrayList<>();
         table.add(row_1);
         table.add(row_2);
+        table.add(row_3);
 
         return new MergeRequest(values, table);
     }
