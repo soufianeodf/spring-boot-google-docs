@@ -3,7 +3,7 @@ package com.uplora.googledocs.entity;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.List;
 
 @Data
@@ -11,6 +11,6 @@ import java.util.List;
 public class MergeRequest {
 
     private List<Value> values;
-    private List<LinkedHashMap<String, String>> table;
+    private List<HashMap<String, String>> table;
 
 }

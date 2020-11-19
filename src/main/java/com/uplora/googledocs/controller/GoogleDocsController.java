@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
+
 @RestController
 public class GoogleDocsController {
 
@@ -17,12 +19,13 @@ public class GoogleDocsController {
     }
 
     @GetMapping("/")
-    public void main() {
+    public void main() throws IOException {
+//        googleDocsService.addRowsToTable(2);
         googleDocsService.main();
     }
 
     @PostMapping("/merge")
-    public void mergeText(@RequestBody MergeRequest mergeRequest) {
-        googleDocsService.mergeText(mergeRequest);
+    public void mergeText(@RequestBody MergeRequest mergeRequest) throws IOException {
+        googleDocsService.mergeText(mergeRequest.getValues());
     }
 }

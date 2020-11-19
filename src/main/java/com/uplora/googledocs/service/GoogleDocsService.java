@@ -13,7 +13,10 @@ import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.api.services.docs.v1.Docs;
 import com.google.api.services.docs.v1.DocsScopes;
 import com.google.api.services.docs.v1.model.*;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.uplora.googledocs.entity.MergeRequest;
+import com.uplora.googledocs.entity.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.FileNotFoundException;
@@ -21,9 +24,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.security.GeneralSecurityException;
-import java.util.ArrayList;
-import java.util.Collections;
+import java.util.*;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class GoogleDocsService {
@@ -75,20 +79,20 @@ public class GoogleDocsService {
         return new AuthorizationCodeInstalledApp(flow, receiver).authorize("user");
     }
 
-    public void main(String... args) {
+    public void main(String... args) throws IOException {
 
         // Prints the title of the requested doc:
         // https://docs.google.com/document/d/195j9eDD3ccgjQRttHhJPymLJUCOUjs-jmwTrekvdjFE/edit
-        Document response = null;
+        /*Document response = null;
         try {
             response = service.documents().get(DOCUMENT_ID).execute();
         } catch (IOException e) {
             e.printStackTrace();
         }
         String title = response.getTitle();
-        System.out.printf("The title of the doc is: %s\n", title);
+        System.out.printf("The title of the doc is: %s\n", title);*/
 
-        // inserting text
+        // inserting text in backwards
         /*List<Request> requests = new ArrayList<>();
         requests.add(new Request().setInsertText(new InsertTextRequest()
                 .setText("this is the last line\n")
@@ -120,8 +124,9 @@ public class GoogleDocsService {
                 .batchUpdate(DOCUMENT_ID, body).execute();*/
 
         // output Doc as JSON
-        /*Gson gson = new GsonBuilder().setPrettyPrinting().create();
-        System.out.println(gson.toJson(response));*/
+//        Document response = service.documents().get(DOCUMENT_ID).execute();
+//        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+//        System.out.println(gson.toJson(response));
 
         // print the body text
         /*List<StructuralElement> contents = response.getBody().getContent();
@@ -133,12 +138,175 @@ public class GoogleDocsService {
                 }
             }
         }*/
+
+        // inserting text into table and add new row
+        /*List<Request> requests = new ArrayList<>();
+        String hello = "first cell value";
+        String voila = "second cell value";
+        requests.add(new Request().setInsertText(new InsertTextRequest()
+                .setText(hello)
+                .setLocation(new Location().setIndex(5))));
+        requests.add(new Request().setInsertText(new InsertTextRequest()
+                .setText(voila)
+                .setLocation(new Location().setIndex(5 + hello.length() + 2))));
+        requests.add(new Request().setInsertTableRow(new InsertTableRowRequest()
+                .setTableCellLocation(new TableCellLocation()
+                        .setTableStartLocation(new Location()
+                                .setIndex(2))
+                        .setRowIndex(1)
+                        .setColumnIndex(1))
+                .setInsertBelow(true)));
+
+        BatchUpdateDocumentRequest body =
+                new BatchUpdateDocumentRequest().setRequests(requests);
+        BatchUpdateDocumentResponse response = service.documents()
+                .batchUpdate(DOCUMENT_ID, body).execute();*/
+
+        MergeRequest valuesFromEndpoint = getValuesFromEndpoint(extractVariablesFromText(extractTextFromDocument()));
+        mergeText(valuesFromEndpoint.getValues());
+        transformTheTable(valuesFromEndpoint.getTable());
     }
 
-    public void mergeText(MergeRequest mergeRequest) {
+    public void transformTheTable(List<HashMap<String, String>> table) throws IOException {
+        int endIndexOfDynamicTableWord = 0;
+        int indexOfFirstCell = 0;
+        int tableRowsNumber = table.size();
+        int tableColumnsNumber = table.get(0).size();
+
+        Document response = service.documents().get(DOCUMENT_ID).execute();
+        // print the response as json
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+        System.out.println(gson.toJson(response));
+
+        List<StructuralElement> elements = response.getBody().getContent();
+
+        for (StructuralElement element : elements) {
+            // get the endIndex of "${dynamic_table}"
+            if(element.getParagraph() != null) {
+                for (ParagraphElement paragraphElement : element.getParagraph().getElements()) {
+                    if(paragraphElement.getTextRun().getContent().equalsIgnoreCase("${dynamic_table}\n")) {
+                        endIndexOfDynamicTableWord = paragraphElement.getEndIndex();
+                    } else if(paragraphElement.getTextRun().getContent().equalsIgnoreCase("${dynamic_table}")) {
+                        endIndexOfDynamicTableWord = paragraphElement.getEndIndex() + 1;
+                    }
+                }
+            }
+        }
+
+        boolean hasAlreadyEntered = false;
+        for (StructuralElement element : elements) {
+            // get the sum of the lengths of the table title's
+            if (element.getTable() != null && element.getEndIndex() > endIndexOfDynamicTableWord && !hasAlreadyEntered) {
+                hasAlreadyEntered = true;
+                tableColumnsNumber = element.getTable().getColumns();
+                for (TableCell cell : element.getTable().getTableRows().get(0).getTableCells()) {
+                    indexOfFirstCell += cell.getContent().get(0)
+                            .getParagraph().getElements().get(0)
+                            .getTextRun().getContent()
+                            .replace("\n", "").length();
+                }
+            }
+        }
+
+        indexOfFirstCell += endIndexOfDynamicTableWord + 3 + (tableColumnsNumber-1)*2 + 3;
+
+        System.out.println(endIndexOfDynamicTableWord);
+
         List<Request> requests = new ArrayList<>();
 
-        mergeRequest.getValues().forEach(value -> {
+        // add rows to the table
+        for(int i = 0; i < tableRowsNumber; i++) {
+            requests.add(new Request().setInsertTableRow(new InsertTableRowRequest()
+                    .setTableCellLocation(new TableCellLocation()
+                            .setTableStartLocation(new Location()
+                                    .setIndex(endIndexOfDynamicTableWord))
+                            .setRowIndex(1)
+                            .setColumnIndex(1))
+                    .setInsertBelow(true)));
+        }
+
+        // delete first row from table
+        requests.add(new Request().setDeleteTableRow(new DeleteTableRowRequest()
+                .setTableCellLocation(new TableCellLocation()
+                        .setTableStartLocation(new Location()
+                                .setIndex(endIndexOfDynamicTableWord))
+                        .setRowIndex(1)
+                        .setColumnIndex(1))));
+
+        // fill cells of table with related values
+        int j = 0;
+        for (HashMap<String, String> row: table) {
+            j++;
+            // transform Map to List
+            List<String> list = new ArrayList<>(row.values());
+            for (int i = 0; i < list.size(); i++) {
+                if(i == 0 && j > 1) {
+                    indexOfFirstCell += 3;
+                }
+                if(i != 0) {
+                    indexOfFirstCell += list.get(i-1).length() + 2;
+                }
+                requests.add(new Request().setInsertText(new InsertTextRequest()
+                        .setText(list.get(i))
+                        .setLocation(new Location().setIndex(indexOfFirstCell))));
+                if(i == list.size() -1) {
+                    indexOfFirstCell += list.get(list.size() - 1).length();
+                }
+            }
+        }
+
+//        String value_1 = "first cell value";
+//        String value_2 = "second cell value";
+//        String value_3 = "third cell value";
+//        String value_4 = "fourth cell value";
+//
+//        String value_5 = "fifth cell value";
+//        String value_6 = "sixth cell value";
+//        String value_7 = "seventh cell value";
+//        String value_8 = "eighth cell value";
+//
+//        requests.add(new Request().setInsertText(new InsertTextRequest()
+//                .setText(value_1)
+//                .setLocation(new Location().setIndex(indexOfFirstCell))));
+//        requests.add(new Request().setInsertText(new InsertTextRequest()
+//                .setText(value_2)
+//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2))));
+//        requests.add(new Request().setInsertText(new InsertTextRequest()
+//                .setText(value_3)
+//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2 + value_2.length() + 2))));
+//        requests.add(new Request().setInsertText(new InsertTextRequest()
+//                .setText(value_4)
+//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2 + value_2.length() + 2 + value_3.length() + 2))));
+//
+//        requests.add(new Request().setInsertText(new InsertTextRequest()
+//                .setText(value_5)
+//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2 + value_2.length() + 2 + value_3.length() + 2 + value_4.length() + 3))));
+//        requests.add(new Request().setInsertText(new InsertTextRequest()
+//                .setText(value_6)
+//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2 + value_2.length() + 2 + value_3.length() + 2 + value_4.length() + 3 + value_5.length() + 2))));
+//        requests.add(new Request().setInsertText(new InsertTextRequest()
+//                .setText(value_7)
+//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2 + value_2.length() + 2 + value_3.length() + 2 + value_4.length() + 3 + value_5.length() + 2 + value_6.length() + 2))));
+//        requests.add(new Request().setInsertText(new InsertTextRequest()
+//                .setText(value_8)
+//                .setLocation(new Location().setIndex(indexOfFirstCell + value_1.length() + 2 + value_2.length() + 2 + value_3.length() + 2 + value_4.length() + 3 + value_5.length() + 2 + value_6.length() + 2 + value_7.length() + 2))));
+
+        // remove ${dynamic_table} annotation
+        requests.add(new Request()
+                .setReplaceAllText(new ReplaceAllTextRequest()
+                        .setContainsText(new SubstringMatchCriteria()
+                                .setText("${dynamic_table}")
+                                .setMatchCase(true))
+                        .setReplaceText("")));
+
+        BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
+        service.documents().batchUpdate(DOCUMENT_ID, body.setRequests(requests)).execute();
+    }
+
+    public void mergeText(List<Value> values) throws IOException {
+        List<Request> requests = new ArrayList<>();
+
+        values.forEach(value -> {
             requests.add(new Request()
                     .setReplaceAllText(new ReplaceAllTextRequest()
                             .setContainsText(new SubstringMatchCriteria()
@@ -147,22 +315,112 @@ public class GoogleDocsService {
                             .setReplaceText(value.getValue())));
         });
 
-        mergeRequest.getTable().forEach(row -> {
-            row.keySet().forEach(cell -> {
-                requests.add(new Request()
-                        .setReplaceAllText(new ReplaceAllTextRequest()
-                                .setContainsText(new SubstringMatchCriteria()
-                                        .setText("${" + cell + "}")
-                                        .setMatchCase(true))
-                                .setReplaceText(row.get(cell))));
-            });
-        });
+//        mergeRequest.getTable().forEach(row -> {
+//            row.keySet().forEach(cell -> {
+//                requests.add(new Request()
+//                        .setReplaceAllText(new ReplaceAllTextRequest()
+//                                .setContainsText(new SubstringMatchCriteria()
+//                                        .setText("${" + cell + "}")
+//                                        .setMatchCase(true))
+//                                .setReplaceText(row.get(cell))));
+//            });
+//        });
 
         BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
-        try {
-            service.documents().batchUpdate(DOCUMENT_ID, body.setRequests(requests)).execute();
-        } catch (IOException e) {
-            e.printStackTrace();
+        service.documents().batchUpdate(DOCUMENT_ID, body.setRequests(requests)).execute();
+    }
+
+    public MergeRequest getValuesFromEndpoint(Set<String> list) {
+        List<Value> values = new ArrayList<>();
+        values.add(new Value("company_name", "Uplora"));
+        values.add(new Value("company_address", "uplora company street"));
+        values.add(new Value("company_city", "uplora company city"));
+        values.add(new Value("prepared_date", "Jun 06, 2020"));
+        values.add(new Value("exp_date", "Aug 06, 2020"));
+        values.add(new Value("customer_name", "john doe"));
+        values.add(new Value("customer_street", "customer street"));
+        values.add(new Value("customer_city", "customer city"));
+
+        HashMap<String, String> row_1 = new LinkedHashMap<>();
+        row_1.put("col_11", "val_11");
+        row_1.put("col_12", "val_12");
+        row_1.put("col_13", "val_13");
+        row_1.put("col_14", "val_14");
+
+        HashMap<String, String> row_2 = new LinkedHashMap<>();
+        row_2.put("col_21", "val_21");
+        row_2.put("col_22", "val_22");
+        row_2.put("col_23", "val_23");
+        row_2.put("col_24", "val_24");
+
+        List<HashMap<String, String>> table = new ArrayList<>();
+        table.add(row_1);
+        table.add(row_2);
+
+        return new MergeRequest(values, table);
+    }
+
+    public Set<String> extractVariablesFromText(String text) {
+        Set<String> variables = new HashSet<>();
+
+        // scan for pattern: ${anything}
+        Pattern pattern = Pattern.compile("\\$\\{(.*?)\\}");
+        Matcher matcher = pattern.matcher(text);
+
+        while(matcher.find()) {
+            variables.add(matcher.group(1));
         }
+
+        variables.remove("dynamic_table");
+
+        return variables;
+    }
+
+    public String extractTextFromDocument() throws IOException {
+        Document doc = service.documents().get(DOCUMENT_ID).execute();
+        return readStructuralElements(doc.getBody().getContent());
+    }
+
+    /**
+     * Recurses through a list of Structural Elements to read a document's text where text may be in
+     * nested elements.
+     *
+     * @param elements a list of Structural Elements
+     */
+    private static String readStructuralElements(List<StructuralElement> elements) {
+        StringBuilder sb = new StringBuilder();
+        for (StructuralElement element : elements) {
+            if (element.getParagraph() != null) {
+                for (ParagraphElement paragraphElement : element.getParagraph().getElements()) {
+                    sb.append(readParagraphElement(paragraphElement));
+                }
+            } else if (element.getTable() != null) {
+                // The text in table cells are in nested Structural Elements and tables may be
+                // nested.
+                for (TableRow row : element.getTable().getTableRows()) {
+                    for (TableCell cell : row.getTableCells()) {
+                        sb.append(readStructuralElements(cell.getContent()));
+                    }
+                }
+            } else if (element.getTableOfContents() != null) {
+                // The text in the TOC is also in a Structural Element.
+                sb.append(readStructuralElements(element.getTableOfContents().getContent()));
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Returns the text in the given ParagraphElement.
+     *
+     * @param element a ParagraphElement from a Google Doc
+     */
+    private static String readParagraphElement(ParagraphElement element) {
+        TextRun run = element.getTextRun();
+        if (run == null || run.getContent() == null) {
+            // The TextRun can be null if there is an inline object.
+            return "";
+        }
+        return run.getContent();
     }
 }
