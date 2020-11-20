@@ -11,6 +11,6 @@ import java.util.List;
 public class MergeRequest {
 
     private List<Value> values;
-    private List<HashMap<String, String>> table;
+    private List<List<HashMap<String, String>>> tables;
 
 }
