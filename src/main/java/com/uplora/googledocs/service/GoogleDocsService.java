@@ -38,7 +38,7 @@ public class GoogleDocsService {
     private static final String APPLICATION_NAME = "Google Docs API Java Quickstart";
     private static final JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
     private static final String TOKENS_DIRECTORY_PATH = "tokens";
-    private static final String DOCUMENT_ID = "1Jp1q4XdcsYtifFXI3Xz6kJqpo4mw6SWaa58P9t5UuRM";
+    private static String documentId;
 
     /**
      * Global instance of the scopes required by this quickstart.
@@ -79,13 +79,13 @@ public class GoogleDocsService {
         return new AuthorizationCodeInstalledApp(flow, receiver).authorize("user");
     }
 
-    public void main(String... args) throws IOException {
+    public void main(String documentId) throws IOException {
 
         // Prints the title of the requested doc:
         // https://docs.google.com/document/d/195j9eDD3ccgjQRttHhJPymLJUCOUjs-jmwTrekvdjFE/edit
         /*Document response = null;
         try {
-            response = service.documents().get(DOCUMENT_ID).execute();
+            response = service.documents().get(documentId).execute();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -108,7 +108,7 @@ public class GoogleDocsService {
 
         BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest().setRequests(requests);
         BatchUpdateDocumentResponse response2 = service.documents()
-                .batchUpdate(DOCUMENT_ID, body).execute();*/
+                .batchUpdate(documentId, body).execute();*/
 
         // deleting text. Deleting the following string -> 'middle '
         /*List<Request> requests = new ArrayList<>();
@@ -121,10 +121,10 @@ public class GoogleDocsService {
 
         BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest().setRequests(requests);
         BatchUpdateDocumentResponse response3 = service.documents()
-                .batchUpdate(DOCUMENT_ID, body).execute();*/
+                .batchUpdate(documentId, body).execute();*/
 
         // output Doc as JSON
-//        Document response = service.documents().get(DOCUMENT_ID).execute();
+//        Document response = service.documents().get(documentId).execute();
 //        Gson gson = new GsonBuilder().setPrettyPrinting().create();
 //        System.out.println(gson.toJson(response));
 
@@ -160,8 +160,8 @@ public class GoogleDocsService {
         BatchUpdateDocumentRequest body =
                 new BatchUpdateDocumentRequest().setRequests(requests);
         BatchUpdateDocumentResponse response = service.documents()
-                .batchUpdate(DOCUMENT_ID, body).execute();*/
-
+                .batchUpdate(documentId, body).execute();*/
+        this.documentId = documentId;
         List<String> helperAnnotationsName = new ArrayList<>();
         MergeRequest valuesFromEndpoint = getValuesFromEndpoint(extractVariablesFromText(extractTextFromDocument()));
         for (int i = 0; i < valuesFromEndpoint.getTables().size(); i++) {
@@ -186,7 +186,7 @@ public class GoogleDocsService {
         }
 
         BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
-        service.documents().batchUpdate(DOCUMENT_ID, body.setRequests(requests)).execute();
+        service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
     }
 
     public void transformTheTable(List<HashMap<String, String>> table, String helperAnnotationName) throws IOException {
@@ -195,7 +195,7 @@ public class GoogleDocsService {
         int tableRowsNumber = table.size();
         int tableColumnsNumber = table.get(0).size();
 
-        Document response = service.documents().get(DOCUMENT_ID).execute();
+        Document response = service.documents().get(documentId).execute();
         // print the response as json
 //        Gson gson = new GsonBuilder().setPrettyPrinting().create();
 //        System.out.println(gson.toJson(response));
@@ -286,7 +286,7 @@ public class GoogleDocsService {
 //                        .setReplaceText("")));
 
         BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
-        service.documents().batchUpdate(DOCUMENT_ID, body.setRequests(requests)).execute();
+        service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
     }
 
     public void mergeText(List<Value> values) throws IOException {
@@ -302,7 +302,7 @@ public class GoogleDocsService {
         });
 
         BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
-        service.documents().batchUpdate(DOCUMENT_ID, body.setRequests(requests)).execute();
+        service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
     }
 
     public MergeRequest getValuesFromEndpoint(Set<String> list) {
@@ -345,10 +345,6 @@ public class GoogleDocsService {
 
         List<List<HashMap<String, String>>> tables = new ArrayList<>();
         tables.add(table);
-        tables.add(table);
-        tables.add(table);
-        tables.add(table);
-        tables.add(table);
 
         return new MergeRequest(values, tables);
     }
@@ -370,7 +366,7 @@ public class GoogleDocsService {
     }
 
     public String extractTextFromDocument() throws IOException {
-        Document doc = service.documents().get(DOCUMENT_ID).execute();
+        Document doc = service.documents().get(documentId).execute();
         return readStructuralElements(doc.getBody().getContent());
     }
 
