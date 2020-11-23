@@ -162,38 +162,35 @@ public class GoogleDocsService {
         BatchUpdateDocumentResponse response = service.documents()
                 .batchUpdate(documentId, body).execute();*/
         this.documentId = documentId;
-        List<String> helperAnnotationsName = new ArrayList<>();
+        String helperAnnotationName = "${dynamic_table}";
         MergeRequest valuesFromEndpoint = getValuesFromEndpoint(extractVariablesFromText(extractTextFromDocument()));
         for (int i = 0; i < valuesFromEndpoint.getTables().size(); i++) {
-            String helperAnnotationName = "${dynamic_table_" + (i + 1) + "}";
-            helperAnnotationsName.add(helperAnnotationName);
-            transformTheTable(valuesFromEndpoint.getTables().get(i), helperAnnotationName);
+            transformTheTable(valuesFromEndpoint.getTables().get(i),i+1);
         }
         mergeText(valuesFromEndpoint.getValues());
-        removeHelperAnnotations(helperAnnotationsName);
+        removeHelperAnnotations(helperAnnotationName);
     }
 
-    public void removeHelperAnnotations(List<String> helperAnnotationsName) throws IOException {
+    public void removeHelperAnnotations(String helperAnnotationName) throws IOException {
         List<Request> requests = new ArrayList<>();
-        // remove helper annotations name
-        for (String helperAnnotationName : helperAnnotationsName) {
+        // remove helper annotation name from document
             requests.add(new Request()
                     .setReplaceAllText(new ReplaceAllTextRequest()
                             .setContainsText(new SubstringMatchCriteria()
                                     .setText(helperAnnotationName)
                                     .setMatchCase(true))
                             .setReplaceText("")));
-        }
 
         BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
         service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
     }
 
-    public void transformTheTable(List<HashMap<String, String>> table, String helperAnnotationName) throws IOException {
+    public void transformTheTable(List<HashMap<String, String>> table, int helperAnnotationNumber) throws IOException {
         int endIndexOfDynamicTableWord = 0;
         int indexOfFirstCell = 0;
         int tableRowsNumber = table.size();
         int tableColumnsNumber = table.get(0).size();
+        String helperAnnotationName = "${dynamic_table}";
 
         Document response = service.documents().get(documentId).execute();
         // print the response as json
@@ -202,24 +199,29 @@ public class GoogleDocsService {
 
         List<StructuralElement> elements = response.getBody().getContent();
 
+        int numberOfOccurrences = 1;
         for (StructuralElement element : elements) {
             // get the endIndex of "${dynamic_table}"
             if(element.getParagraph() != null) {
                 for (ParagraphElement paragraphElement : element.getParagraph().getElements()) {
                     if(paragraphElement.getTextRun().getContent().equalsIgnoreCase(helperAnnotationName + "\n")) {
-                        endIndexOfDynamicTableWord = paragraphElement.getEndIndex();
+                        if(numberOfOccurrences == helperAnnotationNumber) {
+                            endIndexOfDynamicTableWord = paragraphElement.getEndIndex();
+                        }
+                        numberOfOccurrences++;
                     } else if(paragraphElement.getTextRun().getContent().equalsIgnoreCase(helperAnnotationName)) {
-                        endIndexOfDynamicTableWord = paragraphElement.getEndIndex() + 1;
+                        if(numberOfOccurrences == helperAnnotationNumber) {
+                            endIndexOfDynamicTableWord = paragraphElement.getEndIndex() + 1;
+                        }
+                        numberOfOccurrences++;
                     }
                 }
             }
         }
 
-        boolean hasAlreadyEntered = false;
         for (StructuralElement element : elements) {
             // get the sum of the lengths of the table title's
-            if (element.getTable() != null && element.getEndIndex() > endIndexOfDynamicTableWord && !hasAlreadyEntered) {
-                hasAlreadyEntered = true;
+            if (element.getTable() != null && element.getEndIndex() > endIndexOfDynamicTableWord) {
                 tableColumnsNumber = element.getTable().getColumns();
                 for (TableCell cell : element.getTable().getTableRows().get(0).getTableCells()) {
                     indexOfFirstCell += cell.getContent().get(0)
@@ -227,6 +229,8 @@ public class GoogleDocsService {
                             .getTextRun().getContent()
                             .replace("\n", "").length();
                 }
+                // break after you find the first table that respect the conditions
+                break;
             }
         }
 
@@ -276,14 +280,6 @@ public class GoogleDocsService {
                 }
             }
         }
-
-        // remove ${dynamic_table} annotation
-//        requests.add(new Request()
-//                .setReplaceAllText(new ReplaceAllTextRequest()
-//                        .setContainsText(new SubstringMatchCriteria()
-//                                .setText("${dynamic_table}")
-//                                .setMatchCase(true))
-//                        .setReplaceText("")));
 
         BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
         service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
@@ -344,6 +340,7 @@ public class GoogleDocsService {
         table.add(row_3);
 
         List<List<HashMap<String, String>>> tables = new ArrayList<>();
+        tables.add(table);
         tables.add(table);
 
         return new MergeRequest(values, tables);
