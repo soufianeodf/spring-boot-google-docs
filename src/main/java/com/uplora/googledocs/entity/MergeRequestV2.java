@@ -8,9 +8,9 @@ import java.util.List;
 
 @Data
 @AllArgsConstructor
-public class MergeRequest {
+public class MergeRequestV2 {
 
     private List<ResponseValue> values;
-    private List<List<HashMap<String, String>>> tables;
+    private List<List<Cell>> table;
 
 }

@@ -1,5 +1,9 @@
 package com.uplora.googledocs.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp;
 import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver;
@@ -15,9 +19,13 @@ import com.google.api.services.docs.v1.DocsScopes;
 import com.google.api.services.docs.v1.model.*;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.uplora.googledocs.entity.Cell;
 import com.uplora.googledocs.entity.MergeRequest;
-import com.uplora.googledocs.entity.Value;
+import com.uplora.googledocs.entity.RequestValue;
+import com.uplora.googledocs.entity.ResponseValue;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -28,6 +36,10 @@ import java.util.*;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+import static java.util.Map.Entry.comparingByKey;
+import static java.util.stream.Collectors.toMap;
 
 @Service
 public class GoogleDocsService {
@@ -123,11 +135,6 @@ public class GoogleDocsService {
         BatchUpdateDocumentResponse response3 = service.documents()
                 .batchUpdate(documentId, body).execute();*/
 
-        // output Doc as JSON
-//        Document response = service.documents().get(documentId).execute();
-//        Gson gson = new GsonBuilder().setPrettyPrinting().create();
-//        System.out.println(gson.toJson(response));
-
         // print the body text
         /*List<StructuralElement> contents = response.getBody().getContent();
         for (StructuralElement content : contents) {
@@ -163,17 +170,42 @@ public class GoogleDocsService {
                 .batchUpdate(documentId, body).execute();*/
         this.documentId = documentId;
         String helperAnnotationName = "${dynamic_table}";
-        MergeRequest valuesFromEndpoint = getValuesFromEndpoint(extractVariablesFromText(extractTextFromDocument()));
+
+        /*MergeRequest valuesFromEndpoint = getValuesFromEndpoint(extractVariablesFromText(extractTextFromDocument()));
+        MergeRequest valuesFromEndpoint = getValuesFromLevel1API(extractVariablesFromText(extractTextFromDocument()));
         for (int i = 0; i < valuesFromEndpoint.getTables().size(); i++) {
             transformTheTable(valuesFromEndpoint.getTables().get(i),i+1);
+        }*/
+
+        Map<String, List<String>> simpleTextAndTables = extractTextFromDocument();
+        Map.Entry<String, List<String>> entry = simpleTextAndTables.entrySet().iterator().next();
+        String simpleText = entry.getKey();
+        List<String> tables = entry.getValue();
+
+        List<ResponseValue> values = getValuesFromLevel0API(extractVariablesFromText(simpleText));
+        List<List<HashMap<String, String>>> theTables = new ArrayList<>();
+
+        tables.forEach(e -> {
+            try {
+                theTables.add(getValuesFromLevel1API(extractVariablesFromText(e)));
+            } catch (JsonProcessingException jsonProcessingException) {
+                jsonProcessingException.printStackTrace();
+            }
+        });
+
+        MergeRequest mergeRequest = new MergeRequest(values, theTables);
+
+        for (int i = 0; i < mergeRequest.getTables().size(); i++) {
+            transformTheTable(mergeRequest.getTables().get(i),i+1);
         }
-        mergeText(valuesFromEndpoint.getValues());
+
+        mergeText(mergeRequest.getValues());
         removeHelperAnnotations(helperAnnotationName);
     }
 
     public void removeHelperAnnotations(String helperAnnotationName) throws IOException {
         List<Request> requests = new ArrayList<>();
-        // remove helper annotation name from document
+        // remove helper annotation from document
             requests.add(new Request()
                     .setReplaceAllText(new ReplaceAllTextRequest()
                             .setContainsText(new SubstringMatchCriteria()
@@ -264,7 +296,7 @@ public class GoogleDocsService {
         for (HashMap<String, String> row: table) {
             j++;
             // transform Map to List
-            List<String> list = new ArrayList<>(row.values());
+            List<String> list = row.values().stream().collect(Collectors.toList());
             for (int i = 0; i < list.size(); i++) {
                 if(i == 0 && j > 1) {
                     indexOfFirstCell += 3;
@@ -285,32 +317,35 @@ public class GoogleDocsService {
         service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
     }
 
-    public void mergeText(List<Value> values) throws IOException {
+    public void mergeText(List<ResponseValue> values) throws IOException {
         List<Request> requests = new ArrayList<>();
 
         values.forEach(value -> {
             requests.add(new Request()
                     .setReplaceAllText(new ReplaceAllTextRequest()
                             .setContainsText(new SubstringMatchCriteria()
-                                    .setText("${" + value.getId() + "}")
+                                    .setText("${" + value.getId() + "__f}")
                                     .setMatchCase(true))
-                            .setReplaceText(value.getValue())));
+                            .setReplaceText(value.getName() != null ? value.getName() : value.getValue())));
         });
 
-        BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
-        service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
+        if (values != null && !values.isEmpty()) {
+            BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
+            service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
+        }
     }
 
     public MergeRequest getValuesFromEndpoint(Set<String> list) {
-        List<Value> values = new ArrayList<>();
-        values.add(new Value("company_name", "Uplora"));
-        values.add(new Value("company_address", "uplora company street"));
-        values.add(new Value("company_city", "uplora company city"));
-        values.add(new Value("prepared_date", "Jun 06, 2020"));
-        values.add(new Value("exp_date", "Aug 06, 2020"));
-        values.add(new Value("customer_name", "john doe"));
-        values.add(new Value("customer_street", "customer street"));
-        values.add(new Value("customer_city", "customer city"));
+
+        List<ResponseValue> values = new ArrayList<>();
+        values.add(new ResponseValue("company_name", "Uplora", ""));
+        values.add(new ResponseValue("company_address", "uplora company street", ""));
+        values.add(new ResponseValue("company_city", "uplora company city", ""));
+        values.add(new ResponseValue("prepared_date", "Jun 06, 2020", ""));
+        values.add(new ResponseValue("exp_date", "Aug 06, 2020", ""));
+        values.add(new ResponseValue("customer_name", "john doe", ""));
+        values.add(new ResponseValue("customer_street", "customer street", ""));
+        values.add(new ResponseValue("customer_city", "customer city", ""));
 
         // key should be unique
         HashMap<String, String> row_1 = new LinkedHashMap<>();
@@ -341,9 +376,98 @@ public class GoogleDocsService {
 
         List<List<HashMap<String, String>>> tables = new ArrayList<>();
         tables.add(table);
-        tables.add(table);
 
         return new MergeRequest(values, tables);
+    }
+
+    public List<ResponseValue> getValuesFromLevel0API(Set<String> list) {
+        RestTemplate restTemplate = new RestTemplate();
+        String url = "http://d2.uplora.com/api/coreapi/objects/1000135000000000/records/1";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.add("X-Authorization", "Bearer " + getAccessToken());
+
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        List<RequestValue> request = new ArrayList<>();
+
+        list.forEach(e -> {
+            RequestValue value = new RequestValue(
+                    e.substring(0, e.length() - 3),
+                    e
+            );
+            request.add(value);
+        });
+
+        ArrayNode body = objectMapper.valueToTree(request);
+
+        HttpEntity<String> entity = new HttpEntity<>(
+                body.toString()
+                , headers
+        );
+
+        ResponseEntity<ResponseValue[]> responseEntity = restTemplate.exchange(url, HttpMethod.POST, entity, ResponseValue[].class);
+        ResponseValue[] values = responseEntity.getBody();
+
+        return Arrays.asList(values);
+    }
+
+    public List<HashMap<String, String>> getValuesFromLevel1API(Set<String> list) throws JsonProcessingException {
+        RestTemplate restTemplate = new RestTemplate();
+        String url = "http://d2.uplora.com/api/dyndata/objects/1000022/records/search?limit=100&tenantId=ravi&userId=10";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.add("X-Authorization", "Bearer " + getAccessToken());
+
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        List<RequestValue> request = new ArrayList<>();
+
+/*        list.forEach(e -> {
+            RequestValue value = new RequestValue(
+                    e.substring(2, e.length() - 4),
+                    e.substring(2, e.length() - 1)
+            );
+            request.add(value);
+        });*/
+
+        list.forEach(e -> {
+            RequestValue value = new RequestValue(
+                    e.substring(0, e.length() - 3),
+                    e
+            );
+            request.add(value);
+        });
+
+        ObjectNode body = (ObjectNode) objectMapper.readTree("{}");
+        body.putArray("fields").addAll((ArrayNode) objectMapper.valueToTree(request));
+        body.putArray("conditions").add(objectMapper.readTree("{\"rules\":[{\"field\":\"parentId__sys\",\"value\":2,\"operator\":\"=\"}],\"condition\":\"and\"}"));
+
+        HttpEntity<String> entity = new HttpEntity<>(
+                body.toString()
+                , headers
+        );
+
+        ResponseEntity<List> responseEntity = restTemplate.exchange(url, HttpMethod.POST, entity, List.class);
+        List<HashMap<String, String>> table = new ArrayList<>();
+        List<List<HashMap<String, String>>> tempTable = responseEntity.getBody();
+        tempTable.forEach(e -> {
+            HashMap<String, String> row = new LinkedHashMap<>();
+            for(HashMap<String, String> theRow : e) {
+                List<String> element = new ArrayList<>(theRow.values());
+                row.put(element.get(0), String.valueOf(element.get(1)));
+            }
+            table.add(row);
+        });
+        return table;
+    }
+
+    private String getAccessToken() {
+        return "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbkB0b2tlbGF1LmNvbSIsImp0aSI6InRva2VsYXUiLCJjb2NvVXNlcklkIjoxMCwiYnUiOiJBZG1pbmlzdHJhdG9ycyIsImJ1c2luZXNzVW5pdElkIjoxMSwic2NvcGVzIjpbIkdSQU5UX0RBU0hCT0FSRF9SRUFEIiwiR1JBTlRfQU5BTFlUSUNTX1JFQUQiLCJHUkFOVF9DUkVBVEVfQUNDRVNTIiwiR1JBTlRfRVNJR04iLCJHUkFOVF9FTUFJTCIsIkdSQU5UX0FOQUxZVElDU19DUkVBVEUiLCJHUkFOVF9BUFBST1ZBTF9BQ0NFU1MiLCJHUkFOVF9XRl9BQ0NFU1MiLCJHUkFOVF9QUklOVF9BQ0NFU1MiLCJHUkFOVF9SRVBPUlRfUkVBRCIsIkdSQU5UX0FETUlOIiwiR1JBTlRfUkVQT1JUX0NSRUFURSJdLCJpc3MiOiJodHRwOi8vdXBsb3JhLmNvbSIsImlhdCI6MTYwNzI5OTg4MSwiZXhwIjoxNjA3MzgzODgxfQ.m6hNufL4bpOTagc70Cie59HalAM8gdfcEF174gso2R094tqYzjJbyeAoAp-I_cRPVhqsbq9Q6dMVysXbspBcVQ";
     }
 
     public Set<String> extractVariablesFromText(String text) {
@@ -362,38 +486,89 @@ public class GoogleDocsService {
         return variables;
     }
 
-    public String extractTextFromDocument() throws IOException {
+    public Map<String, List<String>> extractTextFromDocument() throws IOException {
         Document doc = service.documents().get(documentId).execute();
-        return readStructuralElements(doc.getBody().getContent());
+//        Document doc = service.documents().get("1fNaafF58aErUjgrIqMN6hNhuIsCSLAGRJIgF-ZawqCU").execute();
+//        Document doc = service.documents().get("1Jp1q4XdcsYtifFXI3Xz6kJqpo4mw6SWaa58P9t5UuRM").execute();
+
+        Map<Integer, String> startIndexAndTablesContent = readStructuralElementsAndGetTablesContent(doc.getBody().getContent());
+
+        Map<Integer, String> startIndexAndTablesContentSorted = startIndexAndTablesContent
+                .entrySet()
+                .stream()
+                .sorted(comparingByKey())
+                .collect(toMap(Map.Entry::getKey, Map.Entry::getValue, (e1, e2) -> e2, LinkedHashMap::new));
+
+        Map<StringBuilder, List<Integer>> simpleTextAndEndIndex = readStructuralElementsAndGetSimpleText(doc.getBody().getContent());
+        Map.Entry<StringBuilder, List<Integer>> theEntry = simpleTextAndEndIndex.entrySet().iterator().next();
+        StringBuilder simpleText = theEntry.getKey();
+        List<Integer> endIndex = theEntry.getValue();
+
+        List<String> tables = new ArrayList<>();
+        StringBuilder finalText = new StringBuilder();
+        finalText.append(simpleText);
+        int i = 0;
+        for (Map.Entry<Integer, String> entry : startIndexAndTablesContentSorted.entrySet()) {
+            if(endIndex.size() > i && (entry.getKey().equals(endIndex.get(i)) || entry.getKey().equals(endIndex.get(i)+1))) {
+                tables.add(entry.getValue());
+                i++;
+            } else {
+                finalText.append(entry.getValue());
+            }
+        }
+
+        Map<String, List<String>> result = new HashMap<>();
+        result.put(finalText.toString(), tables);
+        return result;
     }
 
-    /**
-     * Recurses through a list of Structural Elements to read a document's text where text may be in
-     * nested elements.
-     *
-     * @param elements a list of Structural Elements
-     */
-    private static String readStructuralElements(List<StructuralElement> elements) {
+    private static Map<Integer, String> readStructuralElementsAndGetTablesContent(List<StructuralElement> elements) {
+        Map<Integer, String> result = new HashMap<>();
+        Integer startIndexList;
+        for (StructuralElement theElement : elements) {
+             if (theElement.getTable() != null) {
+                // The text in table cells are in nested Structural Elements and tables may be
+                // nested.
+                startIndexList = theElement.getStartIndex();
+                StringBuilder tableContent = new StringBuilder();
+                for (TableRow row : theElement.getTable().getTableRows()) {
+                    for (TableCell cell : row.getTableCells()) {
+                        for (StructuralElement element : cell.getContent()) {
+                            if (element.getParagraph() != null) {
+                                for (ParagraphElement paragraphElement : element.getParagraph().getElements()) {
+                                    tableContent.append(readParagraphElement(paragraphElement));
+                                }
+                            }
+                        }
+                    }
+                }
+                 result.put(startIndexList, tableContent.toString());
+            }
+        }
+
+        return result;
+    }
+
+    private static Map<StringBuilder, List<Integer>> readStructuralElementsAndGetSimpleText(List<StructuralElement> elements) {
+        Map<StringBuilder, List<Integer>> result = new HashMap<>();
         StringBuilder sb = new StringBuilder();
+        List<Integer> endIndexList = new ArrayList<>();
         for (StructuralElement element : elements) {
             if (element.getParagraph() != null) {
                 for (ParagraphElement paragraphElement : element.getParagraph().getElements()) {
-                    sb.append(readParagraphElement(paragraphElement));
-                }
-            } else if (element.getTable() != null) {
-                // The text in table cells are in nested Structural Elements and tables may be
-                // nested.
-                for (TableRow row : element.getTable().getTableRows()) {
-                    for (TableCell cell : row.getTableCells()) {
-                        sb.append(readStructuralElements(cell.getContent()));
+                    String content = readParagraphElement(paragraphElement);
+                    if(content.contains("${dynamic_table}")) {
+                        endIndexList.add(paragraphElement.getEndIndex());
                     }
+                    sb.append(content);
                 }
             } else if (element.getTableOfContents() != null) {
                 // The text in the TOC is also in a Structural Element.
-                sb.append(readStructuralElements(element.getTableOfContents().getContent()));
+                sb.append(readStructuralElementsAndGetSimpleText(element.getTableOfContents().getContent()));
             }
         }
-        return sb.toString();
+        result.put(sb, endIndexList);
+        return result;
     }
 
     /**
@@ -408,5 +583,11 @@ public class GoogleDocsService {
             return "";
         }
         return run.getContent();
+    }
+
+    public String outputDocAsJson() throws IOException {
+        Document response = service.documents().get("1fNaafF58aErUjgrIqMN6hNhuIsCSLAGRJIgF-ZawqCU").execute();
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+        return gson.toJson(response);
     }
 }

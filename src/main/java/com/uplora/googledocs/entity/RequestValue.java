@@ -5,9 +5,9 @@ import lombok.Data;
 
 @Data
 @AllArgsConstructor
-public class Value {
+public class RequestValue {
 
     private String id;
-    private String value;
+    private String field;
 
 }
