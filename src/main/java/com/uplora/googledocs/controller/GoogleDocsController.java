@@ -20,18 +20,18 @@ public class GoogleDocsController {
         this.googleDocsService = googleDocsService;
     }
 
-    @GetMapping("/call")
-    public void callApi() throws IOException {
-        Set<String> list = new HashSet<>();
-        list.add("${1000537__f}");
-        list.add("${1000547__f}");
-        list.add("${1000549__f}");
-        list.add("${1000550__f}");
-        list.add("${1000551__f}");
-        list.add("${1000552__f}");
-
-        googleDocsService.getValuesFromLevel1API(list);
-    }
+//    @GetMapping("/call")
+//    public void callApi() throws IOException {
+//        Set<String> list = new HashSet<>();
+//        list.add("${1000537__f}");
+//        list.add("${1000547__f}");
+//        list.add("${1000549__f}");
+//        list.add("${1000550__f}");
+//        list.add("${1000551__f}");
+//        list.add("${1000552__f}");
+//
+//        googleDocsService.getValuesFromLevel1API(list);
+//    }
 
     @GetMapping("/{documentId}")
     public void main(@PathVariable(value = "documentId") String documentId) throws IOException {

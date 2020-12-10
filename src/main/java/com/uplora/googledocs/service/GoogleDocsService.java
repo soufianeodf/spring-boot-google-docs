@@ -52,6 +52,8 @@ public class GoogleDocsService {
     private static final String TOKENS_DIRECTORY_PATH = "tokens";
     private static String documentId;
 
+    private static List<String> objectIds = new ArrayList<>();
+
     /**
      * Global instance of the scopes required by this quickstart.
      * If modifying these scopes, delete your previously saved tokens/ folder.
@@ -173,7 +175,6 @@ public class GoogleDocsService {
         this.documentId = documentId;
         Document response = service.documents().get(documentId).execute();
         List<Request> requests = new ArrayList<>();
-        String helperAnnotationName = "${dynamic_table}";
 
         FinalTextAndTables finalTextAndTables = extractTextFromDocument(response);
 
@@ -189,7 +190,7 @@ public class GoogleDocsService {
 
         finalTextAndTables.getTables().forEach(e -> {
             try {
-                theTables.add(getValuesFromLevel1API(extractVariablesFromText(e)));
+                theTables.add(getValuesFromLevel1API(extractVariablesFromText(e), objectIds.get(finalTextAndTables.getTables().indexOf(e))));
             } catch (JsonProcessingException jsonProcessingException) {
                 jsonProcessingException.printStackTrace();
             }
@@ -217,7 +218,12 @@ public class GoogleDocsService {
         Instant var4 = Instant.now();
         System.out.println("***4---> " + Duration.between(var3, var4));
 
-        removeHelperAnnotations(helperAnnotationName, requests);
+        // transform list to set to remove redundancy
+        Set<String> helperAnnotations = new HashSet<>(objectIds);
+        helperAnnotations.add("dynamic_table");
+        helperAnnotations.forEach(e -> {
+            removeHelperAnnotations(e, requests);
+        });
 
         Instant var5 = Instant.now();
         System.out.println("***5---> " + Duration.between(var4, var5));
@@ -237,7 +243,7 @@ public class GoogleDocsService {
             requests.add(new Request()
                     .setReplaceAllText(new ReplaceAllTextRequest()
                             .setContainsText(new SubstringMatchCriteria()
-                                    .setText(helperAnnotationName)
+                                    .setText("${" + helperAnnotationName + "}")
                                     .setMatchCase(true))
                             .setReplaceText("")));
     }
@@ -271,12 +277,12 @@ public class GoogleDocsService {
             // get the endIndex of "${dynamic_table}"
             if(element.getParagraph() != null) {
                 for (ParagraphElement paragraphElement : element.getParagraph().getElements()) {
-                    if(paragraphElement.getTextRun().getContent().equalsIgnoreCase(helperAnnotationName + "\n")) {
+                    if(paragraphElement.getTextRun().getContent().contains(helperAnnotationName + "\n")) {
                         if(numberOfOccurrences == helperAnnotationNumber) {
                             endIndexOfDynamicTableWord = paragraphElement.getEndIndex();
                         }
                         numberOfOccurrences++;
-                    } else if(paragraphElement.getTextRun().getContent().equalsIgnoreCase(helperAnnotationName)) {
+                    } else if(paragraphElement.getTextRun().getContent().contains(helperAnnotationName)) {
                         if(numberOfOccurrences == helperAnnotationNumber) {
                             endIndexOfDynamicTableWord = paragraphElement.getEndIndex() + 1;
                         }
@@ -457,9 +463,9 @@ public class GoogleDocsService {
         return Arrays.asList(values);
     }
 
-    public List<HashMap<String, String>> getValuesFromLevel1API(Set<String> list) throws JsonProcessingException {
+    public List<HashMap<String, String>> getValuesFromLevel1API(Set<String> list, String objectNumber) throws JsonProcessingException {
         RestTemplate restTemplate = new RestTemplate();
-        String url = "http://d2.uplora.com/api/dyndata/objects/1000022/records/search?limit=100&tenantId=ravi&userId=10";
+        String url = "http://d2.uplora.com/api/dyndata/objects/" + objectNumber.substring(0, objectNumber.length() - 3) + "/records/search?limit=100&tenantId=ravi&userId=10";
 
         HttpHeaders headers = new HttpHeaders();
         headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
@@ -510,14 +516,14 @@ public class GoogleDocsService {
     }
 
     private String getAccessToken() {
-        return "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbkB0b2tlbGF1LmNvbSIsImp0aSI6InRva2VsYXUiLCJjb2NvVXNlcklkIjoxMCwiYnUiOiJBZG1pbmlzdHJhdG9ycyIsImJ1c2luZXNzVW5pdElkIjoxMSwic2NvcGVzIjpbIkdSQU5UX0RBU0hCT0FSRF9SRUFEIiwiR1JBTlRfQU5BTFlUSUNTX1JFQUQiLCJHUkFOVF9DUkVBVEVfQUNDRVNTIiwiR1JBTlRfRVNJR04iLCJHUkFOVF9FTUFJTCIsIkdSQU5UX0FOQUxZVElDU19DUkVBVEUiLCJHUkFOVF9BUFBST1ZBTF9BQ0NFU1MiLCJHUkFOVF9XRl9BQ0NFU1MiLCJHUkFOVF9QUklOVF9BQ0NFU1MiLCJHUkFOVF9SRVBPUlRfUkVBRCIsIkdSQU5UX0FETUlOIiwiR1JBTlRfUkVQT1JUX0NSRUFURSJdLCJpc3MiOiJodHRwOi8vdXBsb3JhLmNvbSIsImlhdCI6MTYwNzU0MDAwOSwiZXhwIjoxNjA3NjI0MDA5fQ.b6b22ymvcI_AOq17jUY3zhHGMtnZavxcPCpwZJMucgcmrequVzEYzfYSk6jRJyeJ9dH6BFfq4vV5LWttm9DB4A";
+        return "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbkB0b2tlbGF1LmNvbSIsImp0aSI6InRva2VsYXUiLCJjb2NvVXNlcklkIjoxMCwiYnUiOiJBZG1pbmlzdHJhdG9ycyIsImJ1c2luZXNzVW5pdElkIjoxMSwic2NvcGVzIjpbIkdSQU5UX0RBU0hCT0FSRF9SRUFEIiwiR1JBTlRfQU5BTFlUSUNTX1JFQUQiLCJHUkFOVF9DUkVBVEVfQUNDRVNTIiwiR1JBTlRfRVNJR04iLCJHUkFOVF9FTUFJTCIsIkdSQU5UX0FOQUxZVElDU19DUkVBVEUiLCJHUkFOVF9BUFBST1ZBTF9BQ0NFU1MiLCJHUkFOVF9XRl9BQ0NFU1MiLCJHUkFOVF9QUklOVF9BQ0NFU1MiLCJHUkFOVF9SRVBPUlRfUkVBRCIsIkdSQU5UX0FETUlOIiwiR1JBTlRfUkVQT1JUX0NSRUFURSJdLCJpc3MiOiJodHRwOi8vdXBsb3JhLmNvbSIsImlhdCI6MTYwNzYyNDE0NCwiZXhwIjoxNjA3NzA4MTQ0fQ.pMZ4ZRUznBFPXHYNtF5iMlOu_t0n6RXVagr53uhnuGCNxHFRqqYDxauhMlBkhmeQ75m9LHsmhtPo1YcJYufZ6Q";
     }
 
     public Set<String> extractVariablesFromText(String text) {
         Set<String> variables = new HashSet<>();
 
-        // scan for pattern: ${anything}
-        Pattern pattern = Pattern.compile("\\$\\{(.*?)\\}");
+        // scan for pattern: ${anything_that_do_not_end_with_underscore_underscore_o}
+        Pattern pattern = Pattern.compile("\\$\\{([^}]*?[^__o])\\}");
         Matcher matcher = pattern.matcher(text);
 
         while(matcher.find()) {
@@ -587,12 +593,19 @@ public class GoogleDocsService {
     private static SimpleTextAndEndIndex readStructuralElementsAndGetSimpleText(List<StructuralElement> elements) {
         StringBuilder sb = new StringBuilder();
         List<Integer> endIndexList = new ArrayList<>();
+        Pattern p = Pattern.compile("\\$\\{([^}]*?__o)\\}");
+
         for (StructuralElement element : elements) {
             if (element.getParagraph() != null) {
                 for (ParagraphElement paragraphElement : element.getParagraph().getElements()) {
                     String content = readParagraphElement(paragraphElement);
+                    Matcher matcher = p.matcher(content);
                     if(content.contains("${dynamic_table}")) {
                         endIndexList.add(paragraphElement.getEndIndex());
+                    }
+                    if(matcher.find()) {
+//                        System.out.println("regex ----------->" + matcher.group(1));
+                        objectIds.add(matcher.group(1));
                     }
                     sb.append(content);
                 }
