@@ -19,10 +19,7 @@ import com.google.api.services.docs.v1.DocsScopes;
 import com.google.api.services.docs.v1.model.*;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.uplora.googledocs.entity.Cell;
-import com.uplora.googledocs.entity.MergeRequest;
-import com.uplora.googledocs.entity.RequestValue;
-import com.uplora.googledocs.entity.ResponseValue;
+import com.uplora.googledocs.entity.*;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -32,8 +29,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.security.GeneralSecurityException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -168,24 +168,26 @@ public class GoogleDocsService {
                 new BatchUpdateDocumentRequest().setRequests(requests);
         BatchUpdateDocumentResponse response = service.documents()
                 .batchUpdate(documentId, body).execute();*/
+        Instant start = Instant.now();
+
         this.documentId = documentId;
+        Document response = service.documents().get(documentId).execute();
+        List<Request> requests = new ArrayList<>();
         String helperAnnotationName = "${dynamic_table}";
 
-        /*MergeRequest valuesFromEndpoint = getValuesFromEndpoint(extractVariablesFromText(extractTextFromDocument()));
-        MergeRequest valuesFromEndpoint = getValuesFromLevel1API(extractVariablesFromText(extractTextFromDocument()));
-        for (int i = 0; i < valuesFromEndpoint.getTables().size(); i++) {
-            transformTheTable(valuesFromEndpoint.getTables().get(i),i+1);
-        }*/
+        FinalTextAndTables finalTextAndTables = extractTextFromDocument(response);
 
-        Map<String, List<String>> simpleTextAndTables = extractTextFromDocument();
-        Map.Entry<String, List<String>> entry = simpleTextAndTables.entrySet().iterator().next();
-        String simpleText = entry.getKey();
-        List<String> tables = entry.getValue();
+        Instant var0 = Instant.now();
+        System.out.println("***0---> " + Duration.between(start, var0));
 
-        List<ResponseValue> values = getValuesFromLevel0API(extractVariablesFromText(simpleText));
-        List<List<HashMap<String, String>>> theTables = new ArrayList<>();
+        List<ResponseValue> values = getValuesFromLevel0API(extractVariablesFromText(finalTextAndTables.getFinalText()));
 
-        tables.forEach(e -> {
+        Instant var1 = Instant.now();
+        System.out.println("***1---> " + Duration.between(var0, var1));
+
+        List<List<HashMap<String, String>>> theTables = new ArrayList<>();  
+
+        finalTextAndTables.getTables().forEach(e -> {
             try {
                 theTables.add(getValuesFromLevel1API(extractVariablesFromText(e)));
             } catch (JsonProcessingException jsonProcessingException) {
@@ -193,18 +195,44 @@ public class GoogleDocsService {
             }
         });
 
+        Instant var2 = Instant.now();
+        System.out.println("***2---> " + Duration.between(var1, var2));
+
         MergeRequest mergeRequest = new MergeRequest(values, theTables);
 
-        for (int i = 0; i < mergeRequest.getTables().size(); i++) {
-            transformTheTable(mergeRequest.getTables().get(i),i+1);
-        }
+        AtomicInteger i = new AtomicInteger(1);
+        mergeRequest.getTables().stream().forEach(e -> {
+            try {
+                transformTheTable(e, i.getAndIncrement());
+            } catch (IOException ioException) {
+                ioException.printStackTrace();
+            }
+        });
 
-        mergeText(mergeRequest.getValues());
-        removeHelperAnnotations(helperAnnotationName);
+        Instant var3 = Instant.now();
+        System.out.println("***3---> " + Duration.between(var2, var3));
+
+        mergeText(mergeRequest.getValues(), requests);
+
+        Instant var4 = Instant.now();
+        System.out.println("***4---> " + Duration.between(var3, var4));
+
+        removeHelperAnnotations(helperAnnotationName, requests);
+
+        Instant var5 = Instant.now();
+        System.out.println("***5---> " + Duration.between(var4, var5));
+
+        BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
+        service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
+
+        Instant var6 = Instant.now();
+        System.out.println("***6---> " + Duration.between(var5, var6));
+
+        Instant end = Instant.now();
+        System.out.println("***end---> " + Duration.between(start, end));
     }
 
-    public void removeHelperAnnotations(String helperAnnotationName) throws IOException {
-        List<Request> requests = new ArrayList<>();
+    public void removeHelperAnnotations(String helperAnnotationName, List<Request> requests) {
         // remove helper annotation from document
             requests.add(new Request()
                     .setReplaceAllText(new ReplaceAllTextRequest()
@@ -212,12 +240,16 @@ public class GoogleDocsService {
                                     .setText(helperAnnotationName)
                                     .setMatchCase(true))
                             .setReplaceText("")));
-
-        BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
-        service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
     }
 
     public void transformTheTable(List<HashMap<String, String>> table, int helperAnnotationNumber) throws IOException {
+
+
+        System.out.println("--------------------------->" + helperAnnotationNumber);
+
+
+        Instant start = Instant.now();
+
         int endIndexOfDynamicTableWord = 0;
         int indexOfFirstCell = 0;
         int tableRowsNumber = table.size();
@@ -225,11 +257,14 @@ public class GoogleDocsService {
         String helperAnnotationName = "${dynamic_table}";
 
         Document response = service.documents().get(documentId).execute();
-        // print the response as json
-//        Gson gson = new GsonBuilder().setPrettyPrinting().create();
-//        System.out.println(gson.toJson(response));
+
+        Instant var0 = Instant.now();
+        System.out.println("0---> " + Duration.between(start, var0));
 
         List<StructuralElement> elements = response.getBody().getContent();
+
+        Instant var1 = Instant.now();
+        System.out.println("1---> " + Duration.between(var0, var1));
 
         int numberOfOccurrences = 1;
         for (StructuralElement element : elements) {
@@ -251,6 +286,9 @@ public class GoogleDocsService {
             }
         }
 
+        Instant var2 = Instant.now();
+        System.out.println("2---> " + Duration.between(var1, var2));
+
         for (StructuralElement element : elements) {
             // get the sum of the lengths of the table title's
             if (element.getTable() != null && element.getEndIndex() > endIndexOfDynamicTableWord) {
@@ -265,6 +303,9 @@ public class GoogleDocsService {
                 break;
             }
         }
+
+        Instant var3 = Instant.now();
+        System.out.println("3---> " + Duration.between(var2, var3));
 
         indexOfFirstCell += endIndexOfDynamicTableWord + 3 + (tableColumnsNumber-1)*2 + 3;
 
@@ -283,6 +324,9 @@ public class GoogleDocsService {
                     .setInsertBelow(true)));
         }
 
+        Instant var4 = Instant.now();
+        System.out.println("4---> " + Duration.between(var3, var4));
+
         // delete first row from table
         requests.add(new Request().setDeleteTableRow(new DeleteTableRowRequest()
                 .setTableCellLocation(new TableCellLocation()
@@ -290,6 +334,9 @@ public class GoogleDocsService {
                                 .setIndex(endIndexOfDynamicTableWord))
                         .setRowIndex(1)
                         .setColumnIndex(1))));
+
+        Instant var5 = Instant.now();
+        System.out.println("5---> " + Duration.between(var4, var5));
 
         // fill cells of table with related values
         int j = 0;
@@ -315,11 +362,12 @@ public class GoogleDocsService {
 
         BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
         service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
+
+        Instant var6 = Instant.now();
+        System.out.println("6---> " + Duration.between(var5, var6));
     }
 
-    public void mergeText(List<ResponseValue> values) throws IOException {
-        List<Request> requests = new ArrayList<>();
-
+    public void mergeText(List<ResponseValue> values, List<Request> requests) throws IOException {
         values.forEach(value -> {
             requests.add(new Request()
                     .setReplaceAllText(new ReplaceAllTextRequest()
@@ -328,11 +376,6 @@ public class GoogleDocsService {
                                     .setMatchCase(true))
                             .setReplaceText(value.getName() != null ? value.getName() : value.getValue())));
         });
-
-        if (values != null && !values.isEmpty()) {
-            BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
-            service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
-        }
     }
 
     public MergeRequest getValuesFromEndpoint(Set<String> list) {
@@ -467,7 +510,7 @@ public class GoogleDocsService {
     }
 
     private String getAccessToken() {
-        return "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbkB0b2tlbGF1LmNvbSIsImp0aSI6InRva2VsYXUiLCJjb2NvVXNlcklkIjoxMCwiYnUiOiJBZG1pbmlzdHJhdG9ycyIsImJ1c2luZXNzVW5pdElkIjoxMSwic2NvcGVzIjpbIkdSQU5UX0RBU0hCT0FSRF9SRUFEIiwiR1JBTlRfQU5BTFlUSUNTX1JFQUQiLCJHUkFOVF9DUkVBVEVfQUNDRVNTIiwiR1JBTlRfRVNJR04iLCJHUkFOVF9FTUFJTCIsIkdSQU5UX0FOQUxZVElDU19DUkVBVEUiLCJHUkFOVF9BUFBST1ZBTF9BQ0NFU1MiLCJHUkFOVF9XRl9BQ0NFU1MiLCJHUkFOVF9QUklOVF9BQ0NFU1MiLCJHUkFOVF9SRVBPUlRfUkVBRCIsIkdSQU5UX0FETUlOIiwiR1JBTlRfUkVQT1JUX0NSRUFURSJdLCJpc3MiOiJodHRwOi8vdXBsb3JhLmNvbSIsImlhdCI6MTYwNzI5OTg4MSwiZXhwIjoxNjA3MzgzODgxfQ.m6hNufL4bpOTagc70Cie59HalAM8gdfcEF174gso2R094tqYzjJbyeAoAp-I_cRPVhqsbq9Q6dMVysXbspBcVQ";
+        return "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbkB0b2tlbGF1LmNvbSIsImp0aSI6InRva2VsYXUiLCJjb2NvVXNlcklkIjoxMCwiYnUiOiJBZG1pbmlzdHJhdG9ycyIsImJ1c2luZXNzVW5pdElkIjoxMSwic2NvcGVzIjpbIkdSQU5UX0RBU0hCT0FSRF9SRUFEIiwiR1JBTlRfQU5BTFlUSUNTX1JFQUQiLCJHUkFOVF9DUkVBVEVfQUNDRVNTIiwiR1JBTlRfRVNJR04iLCJHUkFOVF9FTUFJTCIsIkdSQU5UX0FOQUxZVElDU19DUkVBVEUiLCJHUkFOVF9BUFBST1ZBTF9BQ0NFU1MiLCJHUkFOVF9XRl9BQ0NFU1MiLCJHUkFOVF9QUklOVF9BQ0NFU1MiLCJHUkFOVF9SRVBPUlRfUkVBRCIsIkdSQU5UX0FETUlOIiwiR1JBTlRfUkVQT1JUX0NSRUFURSJdLCJpc3MiOiJodHRwOi8vdXBsb3JhLmNvbSIsImlhdCI6MTYwNzU0MDAwOSwiZXhwIjoxNjA3NjI0MDA5fQ.b6b22ymvcI_AOq17jUY3zhHGMtnZavxcPCpwZJMucgcmrequVzEYzfYSk6jRJyeJ9dH6BFfq4vV5LWttm9DB4A";
     }
 
     public Set<String> extractVariablesFromText(String text) {
@@ -486,12 +529,9 @@ public class GoogleDocsService {
         return variables;
     }
 
-    public Map<String, List<String>> extractTextFromDocument() throws IOException {
-        Document doc = service.documents().get(documentId).execute();
-//        Document doc = service.documents().get("1fNaafF58aErUjgrIqMN6hNhuIsCSLAGRJIgF-ZawqCU").execute();
-//        Document doc = service.documents().get("1Jp1q4XdcsYtifFXI3Xz6kJqpo4mw6SWaa58P9t5UuRM").execute();
-
-        Map<Integer, String> startIndexAndTablesContent = readStructuralElementsAndGetTablesContent(doc.getBody().getContent());
+    public FinalTextAndTables extractTextFromDocument(Document doc) {
+        List<StructuralElement> content = doc.getBody().getContent();
+        Map<Integer, String> startIndexAndTablesContent = readStructuralElementsAndGetTablesContent(content);
 
         Map<Integer, String> startIndexAndTablesContentSorted = startIndexAndTablesContent
                 .entrySet()
@@ -499,17 +539,14 @@ public class GoogleDocsService {
                 .sorted(comparingByKey())
                 .collect(toMap(Map.Entry::getKey, Map.Entry::getValue, (e1, e2) -> e2, LinkedHashMap::new));
 
-        Map<StringBuilder, List<Integer>> simpleTextAndEndIndex = readStructuralElementsAndGetSimpleText(doc.getBody().getContent());
-        Map.Entry<StringBuilder, List<Integer>> theEntry = simpleTextAndEndIndex.entrySet().iterator().next();
-        StringBuilder simpleText = theEntry.getKey();
-        List<Integer> endIndex = theEntry.getValue();
+        SimpleTextAndEndIndex simpleTextAndEndIndex = readStructuralElementsAndGetSimpleText(content);
 
         List<String> tables = new ArrayList<>();
         StringBuilder finalText = new StringBuilder();
-        finalText.append(simpleText);
+        finalText.append(simpleTextAndEndIndex.getSimpleText());
         int i = 0;
         for (Map.Entry<Integer, String> entry : startIndexAndTablesContentSorted.entrySet()) {
-            if(endIndex.size() > i && (entry.getKey().equals(endIndex.get(i)) || entry.getKey().equals(endIndex.get(i)+1))) {
+            if(simpleTextAndEndIndex.getEndIndex().size() > i && (entry.getKey().equals(simpleTextAndEndIndex.getEndIndex().get(i)) || entry.getKey().equals(simpleTextAndEndIndex.getEndIndex().get(i)+1))) {
                 tables.add(entry.getValue());
                 i++;
             } else {
@@ -517,9 +554,7 @@ public class GoogleDocsService {
             }
         }
 
-        Map<String, List<String>> result = new HashMap<>();
-        result.put(finalText.toString(), tables);
-        return result;
+        return new FinalTextAndTables(finalText.toString(), tables);
     }
 
     private static Map<Integer, String> readStructuralElementsAndGetTablesContent(List<StructuralElement> elements) {
@@ -549,8 +584,7 @@ public class GoogleDocsService {
         return result;
     }
 
-    private static Map<StringBuilder, List<Integer>> readStructuralElementsAndGetSimpleText(List<StructuralElement> elements) {
-        Map<StringBuilder, List<Integer>> result = new HashMap<>();
+    private static SimpleTextAndEndIndex readStructuralElementsAndGetSimpleText(List<StructuralElement> elements) {
         StringBuilder sb = new StringBuilder();
         List<Integer> endIndexList = new ArrayList<>();
         for (StructuralElement element : elements) {
@@ -567,8 +601,7 @@ public class GoogleDocsService {
                 sb.append(readStructuralElementsAndGetSimpleText(element.getTableOfContents().getContent()));
             }
         }
-        result.put(sb, endIndexList);
-        return result;
+        return new SimpleTextAndEndIndex(sb, endIndexList);
     }
 
     /**

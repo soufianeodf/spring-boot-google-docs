@@ -1,11 +1,14 @@
 package com.uplora.googledocs.controller;
 
+import com.google.api.services.docs.v1.model.Request;
 import com.uplora.googledocs.entity.MergeRequest;
 import com.uplora.googledocs.service.GoogleDocsService;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @RestController
@@ -47,6 +50,6 @@ public class GoogleDocsController {
 
     @PostMapping("/merge")
     public void mergeText(@RequestBody MergeRequest mergeRequest) throws IOException {
-        googleDocsService.mergeText(mergeRequest.getValues());
+        googleDocsService.mergeText(mergeRequest.getValues(), new ArrayList<>());
     }
 }
