@@ -176,10 +176,13 @@ public class GoogleDocsService {
         Document response = service.documents().get(documentId).execute();
         List<Request> requests = new ArrayList<>();
 
+        Instant var00 = Instant.now();
+        System.out.println("***00---> " + Duration.between(start, var00));
+
         FinalTextAndTables finalTextAndTables = extractTextFromDocument(response);
 
         Instant var0 = Instant.now();
-        System.out.println("***0---> " + Duration.between(start, var0));
+        System.out.println("***0---> " + Duration.between(var00, var0));
 
         List<ResponseValue> values = getValuesFromLevel0API(extractVariablesFromText(finalTextAndTables.getFinalText()));
 
@@ -516,7 +519,7 @@ public class GoogleDocsService {
     }
 
     private String getAccessToken() {
-        return "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbkB0b2tlbGF1LmNvbSIsImp0aSI6InRva2VsYXUiLCJjb2NvVXNlcklkIjoxMCwiYnUiOiJBZG1pbmlzdHJhdG9ycyIsImJ1c2luZXNzVW5pdElkIjoxMSwic2NvcGVzIjpbIkdSQU5UX0RBU0hCT0FSRF9SRUFEIiwiR1JBTlRfQU5BTFlUSUNTX1JFQUQiLCJHUkFOVF9DUkVBVEVfQUNDRVNTIiwiR1JBTlRfRVNJR04iLCJHUkFOVF9FTUFJTCIsIkdSQU5UX0FOQUxZVElDU19DUkVBVEUiLCJHUkFOVF9BUFBST1ZBTF9BQ0NFU1MiLCJHUkFOVF9XRl9BQ0NFU1MiLCJHUkFOVF9QUklOVF9BQ0NFU1MiLCJHUkFOVF9SRVBPUlRfUkVBRCIsIkdSQU5UX0FETUlOIiwiR1JBTlRfUkVQT1JUX0NSRUFURSJdLCJpc3MiOiJodHRwOi8vdXBsb3JhLmNvbSIsImlhdCI6MTYwNzYyNDE0NCwiZXhwIjoxNjA3NzA4MTQ0fQ.pMZ4ZRUznBFPXHYNtF5iMlOu_t0n6RXVagr53uhnuGCNxHFRqqYDxauhMlBkhmeQ75m9LHsmhtPo1YcJYufZ6Q";
+        return "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbkB0b2tlbGF1LmNvbSIsImp0aSI6InRva2VsYXUiLCJjb2NvVXNlcklkIjoxMCwiYnUiOiJBZG1pbmlzdHJhdG9ycyIsImJ1c2luZXNzVW5pdElkIjoxMSwic2NvcGVzIjpbIkdSQU5UX0RBU0hCT0FSRF9SRUFEIiwiR1JBTlRfQU5BTFlUSUNTX1JFQUQiLCJHUkFOVF9DUkVBVEVfQUNDRVNTIiwiR1JBTlRfRVNJR04iLCJHUkFOVF9FTUFJTCIsIkdSQU5UX0FOQUxZVElDU19DUkVBVEUiLCJHUkFOVF9BUFBST1ZBTF9BQ0NFU1MiLCJHUkFOVF9XRl9BQ0NFU1MiLCJHUkFOVF9QUklOVF9BQ0NFU1MiLCJHUkFOVF9SRVBPUlRfUkVBRCIsIkdSQU5UX0FETUlOIiwiR1JBTlRfUkVQT1JUX0NSRUFURSJdLCJpc3MiOiJodHRwOi8vdXBsb3JhLmNvbSIsImlhdCI6MTYwNzg4MzQ3MiwiZXhwIjoxNjA3OTY3NDcyfQ.r26Ek8Jn2GNtMHGVPwcr5kGOfQBAWAxYVse7D6uNZHSkceLUrInvGV7Kg2zbD1vPLsfOayzqb4b6sp40TGpfGQ";
     }
 
     public Set<String> extractVariablesFromText(String text) {
