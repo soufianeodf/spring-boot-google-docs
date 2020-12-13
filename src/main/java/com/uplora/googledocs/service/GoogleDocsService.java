@@ -33,6 +33,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -184,71 +186,101 @@ public class GoogleDocsService {
         Instant var0 = Instant.now();
         System.out.println("***0---> " + Duration.between(var00, var0));
 
-        List<ResponseValue> values = getValuesFromLevel0API(extractVariablesFromText(finalTextAndTables.getFinalText()));
-
         Instant var1 = Instant.now();
         System.out.println("***1---> " + Duration.between(var0, var1));
 
-        List<List<HashMap<String, String>>> theTables = new ArrayList<>();  
-
+        CompletableFuture<List<ResponseValue>> values = CompletableFuture.supplyAsync(() -> getValuesFromLevel0API(extractVariablesFromText(finalTextAndTables.getFinalText())));
+        List<CompletableFuture<List<HashMap<String, String>>>> theTables = new ArrayList<>();
         finalTextAndTables.getTables().forEach(e -> {
+            theTables.add(CompletableFuture.supplyAsync(() -> getValuesFromLevel1API(extractVariablesFromText(e), objectIds.get(finalTextAndTables.getTables().indexOf(e)))));
+        });
+        CompletableFuture[] cfs = new CompletableFuture[theTables.size() + 1];
+        cfs[0] = values;
+        for(int i = 1; i <= theTables.size(); i++) {
+            cfs[i] = theTables.get(i-1);
+        }
+        CompletableFuture<Void> allCompleted = CompletableFuture.allOf(cfs);
+        allCompleted.thenRun(() -> {
+            List<ResponseValue> thevalues = null;
             try {
-                theTables.add(getValuesFromLevel1API(extractVariablesFromText(e), objectIds.get(finalTextAndTables.getTables().indexOf(e))));
-            } catch (JsonProcessingException jsonProcessingException) {
-                jsonProcessingException.printStackTrace();
+                thevalues = values.get();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } catch (ExecutionException e) {
+                e.printStackTrace();
             }
-        });
 
-        Instant var2 = Instant.now();
-        System.out.println("***2---> " + Duration.between(var1, var2));
+            List<List<HashMap<String, String>>> theTables2 = new ArrayList<>();
+            theTables.forEach(e -> {
+                try {
+                    theTables2.add(e.get());
+                } catch (InterruptedException interruptedException) {
+                    interruptedException.printStackTrace();
+                } catch (ExecutionException executionException) {
+                    executionException.printStackTrace();
+                }
+            });
 
-        MergeRequest mergeRequest = new MergeRequest(values, theTables);
+            Instant var2 = Instant.now();
+            System.out.println("***2---> " + Duration.between(var1, var2));
 
-        AtomicInteger i = new AtomicInteger(1);
-        mergeRequest.getTables().stream().forEach(e -> {
+            MergeRequest mergeRequest = new MergeRequest(thevalues, theTables2);
+
+            AtomicInteger i = new AtomicInteger(1);
+            mergeRequest.getTables().stream().forEach(e -> {
+                try {
+                    transformTheTable(e, i.getAndIncrement());
+                } catch (IOException ioException) {
+                    ioException.printStackTrace();
+                }
+            });
+
+            Instant var3 = Instant.now();
+            System.out.println("***3---> " + Duration.between(var2, var3));
+
             try {
-                transformTheTable(e, i.getAndIncrement());
-            } catch (IOException ioException) {
-                ioException.printStackTrace();
+                mergeText(mergeRequest.getValues(), requests);
+            } catch (IOException e) {
+                e.printStackTrace();
             }
+
+            Instant var4 = Instant.now();
+            System.out.println("***4---> " + Duration.between(var3, var4));
+
+            // transform list to set to remove redundancy
+            Set<String> helperAnnotations = new HashSet<>(objectIds);
+            helperAnnotations.add("dynamic_table");
+            helperAnnotations.forEach(e -> {
+                removeHelperAnnotations(e, requests);
+            });
+
+            Instant var5 = Instant.now();
+            System.out.println("***5---> " + Duration.between(var4, var5));
+
+            BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
+            try {
+                service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            Instant var6 = Instant.now();
+            System.out.println("***6---> " + Duration.between(var5, var6));
+
+            Instant end = Instant.now();
+            System.out.println("***end---> " + Duration.between(start, end));
+
         });
-
-        Instant var3 = Instant.now();
-        System.out.println("***3---> " + Duration.between(var2, var3));
-
-        mergeText(mergeRequest.getValues(), requests);
-
-        Instant var4 = Instant.now();
-        System.out.println("***4---> " + Duration.between(var3, var4));
-
-        // transform list to set to remove redundancy
-        Set<String> helperAnnotations = new HashSet<>(objectIds);
-        helperAnnotations.add("dynamic_table");
-        helperAnnotations.forEach(e -> {
-            removeHelperAnnotations(e, requests);
-        });
-
-        Instant var5 = Instant.now();
-        System.out.println("***5---> " + Duration.between(var4, var5));
-
-        BatchUpdateDocumentRequest body = new BatchUpdateDocumentRequest();
-        service.documents().batchUpdate(documentId, body.setRequests(requests)).execute();
-
-        Instant var6 = Instant.now();
-        System.out.println("***6---> " + Duration.between(var5, var6));
-
-        Instant end = Instant.now();
-        System.out.println("***end---> " + Duration.between(start, end));
     }
 
     public void removeHelperAnnotations(String helperAnnotationName, List<Request> requests) {
         // remove helper annotation from document
-            requests.add(new Request()
-                    .setReplaceAllText(new ReplaceAllTextRequest()
-                            .setContainsText(new SubstringMatchCriteria()
-                                    .setText("${" + helperAnnotationName + "}")
-                                    .setMatchCase(true))
-                            .setReplaceText("")));
+        requests.add(new Request()
+                .setReplaceAllText(new ReplaceAllTextRequest()
+                        .setContainsText(new SubstringMatchCriteria()
+                                .setText("${" + helperAnnotationName + "}")
+                                .setMatchCase(true))
+                        .setReplaceText("")));
     }
 
     public void transformTheTable(List<HashMap<String, String>> table, int helperAnnotationNumber) throws IOException {
@@ -466,7 +498,7 @@ public class GoogleDocsService {
         return Arrays.asList(values);
     }
 
-    public List<HashMap<String, String>> getValuesFromLevel1API(Set<String> list, String objectNumber) throws JsonProcessingException {
+    public List<HashMap<String, String>> getValuesFromLevel1API(Set<String> list, String objectNumber) {
         RestTemplate restTemplate = new RestTemplate();
         String url = "http://d2.uplora.com/api/dyndata/objects/" + objectNumber.substring(0, objectNumber.length() - 3) + "/records/search?limit=100&tenantId=ravi&userId=10";
 
@@ -495,9 +527,18 @@ public class GoogleDocsService {
             request.add(value);
         });
 
-        ObjectNode body = (ObjectNode) objectMapper.readTree("{}");
+        ObjectNode body = null;
+        try {
+            body = (ObjectNode) objectMapper.readTree("{}");
+        } catch (JsonProcessingException e) {
+            e.printStackTrace();
+        }
         body.putArray("fields").addAll((ArrayNode) objectMapper.valueToTree(request));
-        body.putArray("conditions").add(objectMapper.readTree("{\"rules\":[{\"field\":\"parentId__sys\",\"value\":2,\"operator\":\"=\"}],\"condition\":\"and\"}"));
+        try {
+            body.putArray("conditions").add(objectMapper.readTree("{\"rules\":[{\"field\":\"parentId__sys\",\"value\":2,\"operator\":\"=\"}],\"condition\":\"and\"}"));
+        } catch (JsonProcessingException e) {
+            e.printStackTrace();
+        }
 
         HttpEntity<String> entity = new HttpEntity<>(
                 body.toString()
@@ -570,7 +611,7 @@ public class GoogleDocsService {
         Map<Integer, String> result = new HashMap<>();
         Integer startIndexList;
         for (StructuralElement theElement : elements) {
-             if (theElement.getTable() != null) {
+            if (theElement.getTable() != null) {
                 // The text in table cells are in nested Structural Elements and tables may be
                 // nested.
                 startIndexList = theElement.getStartIndex();
@@ -586,7 +627,7 @@ public class GoogleDocsService {
                         }
                     }
                 }
-                 result.put(startIndexList, tableContent.toString());
+                result.put(startIndexList, tableContent.toString());
             }
         }
 
